@@ -7,10 +7,10 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 
 # Менеджер пользователя
 class UserManager(BaseUserManager):
-    def create_user(self, telegram_id, name, phone, **extra_fields):
+    def create_user(self, telegram_id, name, phone, city, **extra_fields):
         if not telegram_id:
             raise ValueError('The Telegram ID is required')
-        user = self.model(telegram_id=telegram_id, name=name, phone=phone, **extra_fields)
+        user = self.model(telegram_id=telegram_id, name=name, phone=phone, city=city, **extra_fields)
         user.save(using=self._db)
         return user
 
@@ -21,6 +21,7 @@ class User(models.Model):
     telegram_username = models.CharField(max_length=255, blank=True, null=True)
     name = models.CharField(max_length=255)
     phone = models.CharField(max_length=20)
+    city = models.CharField(max_length=100)  # <-- Это поле есть
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
