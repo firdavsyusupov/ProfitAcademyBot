@@ -32,6 +32,8 @@ class Database:
         self.create_promocode_table()
         self.create_groups_table()
         self.create_payments_table()
+        self.create_channels_table()
+        self.create_admins_table()
 
     def create_user_table(self):
         self.cursor.execute('''
@@ -104,6 +106,29 @@ class Database:
         ''')
         self.connection.commit()
 
+
+    def create_channels_table(self):
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id TEXT NOT NULL,
+                url TEXT NOT NULL,
+                FOREIGN KEY (course_id) REFERENCES courses(id)
+            );
+        ''')
+        self.connection.commit()
+
+    def create_admins_table(self):
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS admins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                username TEXT NOT NULL
+            );
+        ''')
+        self.connection.commit()
+
+
     def update_promocode(self, promocode_id, limit_count=None):
         self.cursor.execute("UPDATE promocodes SET limit_count = ? WHERE id = ?", (limit_count, promocode_id))
         self.connection.commit()
@@ -124,7 +149,7 @@ class Database:
         try:
             if self.get_user_by_id(userid):
                 print(f"User with ID {userid} already exists in the database.")
-                return
+                return False
 
             self.cursor.execute('''
                 INSERT INTO users (name, phone, city, username, userid, current_time) 
@@ -149,12 +174,14 @@ class Database:
         except sqlite3.IntegrityError as e:
             print(f"Error inserting user: {e}")
 
-    # def update_payment(self):
-    #     self.cursor.execute("UPDATE payments SET limit_count = ? WHERE id = ?", (limit_count, promocode_id))
-    #     self.connection.commit()
 
     def get_user_by_id(self, userid):
         self.cursor.execute('SELECT * FROM users WHERE userid = ?', (userid,))
+        return dict_fetchone(self.cursor)
+
+
+    def get_channel_by_course_id(self, course_id):
+        self.cursor.execute('SELECT * FROM channels WHERE course_id = ?', (course_id,))
         return dict_fetchone(self.cursor)
 
 
@@ -175,3 +202,7 @@ class Database:
     def get_groups(self):
         self.cursor.execute('SELECT * FROM groups')
         return dict_fetchall(self.cursor)
+
+    def get_admin(self):
+        self.cursor.execute('SELECT * FROM admins')
+        return dict_fetchone(self.cursor)

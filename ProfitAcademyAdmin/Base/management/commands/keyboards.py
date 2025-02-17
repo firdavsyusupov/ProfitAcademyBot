@@ -55,16 +55,38 @@ def course_buttons(courses):
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
 
-def check_button(user_id, photo_id):
+def check_button(user_id, photo_id, course_id):
 
-    callback_data_approve = f"approve.{user_id}.{photo_id}"
-    callback_data_reject = f"reject.{user_id}.{photo_id}"
+    callback_data_approve = f"approve.{user_id}.{photo_id}.{course_id}"
+    callback_data_reject = f"reject.{user_id}.{photo_id}.{course_id}"
 
     keyboard = [[
-        InlineKeyboardButton("Approve", callback_data=callback_data_approve),
-        InlineKeyboardButton("Reject", callback_data=callback_data_reject)
+        InlineKeyboardButton("✅", callback_data=callback_data_approve),
+        InlineKeyboardButton("🚫", callback_data=callback_data_reject)
     ]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     return reply_markup
 
+def channel_button(url):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Kanalga o'tish", url=url)
+        ]
+    ])
+
+def skip_button():
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("O'tkazib yuborish", callback_data="skip")
+        ]
+    ])
+
+def admin_button(url):
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Admin bilan bog'lanish", url=url)
+        ]
+    ])

@@ -63,7 +63,7 @@ class Group(models.Model):
 
 class Payment(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
-    photo = models.ImageField(upload_to="photos/cheques")
+    photo = models.ImageField(upload_to="photos/cheques/")
     course = models.ForeignKey(Course, on_delete=models.CASCADE)
     payment = models.IntegerField()
     promocode = models.ForeignKey(Promocode, on_delete=models.CASCADE)
@@ -75,3 +75,23 @@ class Payment(models.Model):
         managed = False
         verbose_name = 'payment'
         verbose_name_plural = 'payments'
+
+class Channel(models.Model):
+    course = models.ForeignKey(Course, on_delete=models.CASCADE)
+    url = models.CharField(max_length=150)
+
+    class Meta:
+        db_table = 'channels'
+        managed = False
+        verbose_name = 'channel'
+        verbose_name_plural = 'channels'
+
+class Admin(models.Model):
+    name = models.CharField(max_length=100)
+    username = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = 'admins'
+        managed = False
+        verbose_name = 'admin'
+        verbose_name_plural = 'admins'

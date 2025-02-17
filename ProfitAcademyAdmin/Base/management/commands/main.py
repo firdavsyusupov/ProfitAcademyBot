@@ -1,5 +1,7 @@
 import os
+import re
 
+from django.conf import settings
 from django.core.management import BaseCommand
 from dotenv import load_dotenv
 from telegram import ReplyKeyboardRemove, InlineKeyboardMarkup
@@ -7,7 +9,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 from .configs import STATE, regions
 from .database import Database
-from .keyboards import regions_button, course_buttons, contact_button, apply_course, payment, check_button
+from .keyboards import regions_button, course_buttons, contact_button, apply_course, payment, check_button, \
+    channel_button, skip_button, admin_button
 from datetime import datetime
 
 load_dotenv()
@@ -19,8 +22,25 @@ db = Database("db.sqlite3")
 
 async def start(update, context):
 
-    await update.message.reply_text("Assalomu alaykum!\n\n✍️Ro'yxatdan o'tish uchun ismingizni kiriting:", reply_markup=ReplyKeyboardRemove())
-    context.user_data["state"] = STATE["name"]
+    userid = update.message.from_user.id
+
+    user = db.get_user_by_id(userid)
+    print(user)
+
+    if user:
+        courses = db.get_all_courses()
+
+        await update.message.reply_text(f"Assalomu alaykum, {user['name']}!\n\n"
+                                        f"Sizning shahringiz: {user['city']}\n"
+                                        f"Sizning telefon raqamingiz: {user['phone']}\n\n"
+                                        "Endi siz kursga yozilishingiz mumkin.",
+                                        reply_markup=course_buttons(courses))
+
+        context.user_data["state"] = STATE["course"]
+
+    else:
+        await update.message.reply_text("Assalomu alaykum!\n\n✍️Ro'yxatdan o'tish uchun ismingizni kiriting:", reply_markup=ReplyKeyboardRemove())
+        context.user_data["state"] = STATE["name"]
 
 async def message_handler(update, context):
 
@@ -28,6 +48,8 @@ async def message_handler(update, context):
 
     try:
         state = context.user_data["state"]
+
+        print("state>>", state)
 
         user = update.message.from_user
 
@@ -42,34 +64,43 @@ async def message_handler(update, context):
 
         if state == STATE["phone"]:
 
-            name = context.user_data["name"]
-            city = context.user_data["city"]
+            phone_number_pattern = re.compile(r'^\+?[1-9]\d{1,14}$')
 
-            db.insert_user(name=name,
-                           phone=message,
-                           city=city,
-                           username=user.username,
-                           userid=user.id)
+            if phone_number_pattern.match(message):
 
-            courses = db.get_all_courses()
+                name = context.user_data["name"]
+                city = context.user_data["city"]
 
-            await update.message.reply_text(f"Tabriklaymiz, {context.user_data['name']}!\n\n"
-                                            "🎉 Siz muvaffaqiyatli ro'yxatdan o'tdingiz.\n\n"
-                                            f"Sizning shahringiz: {context.user_data['city']}\n"
-                                            f"Sizning telefon raqamingiz: {message}\n\n"
-                                            "Endi siz kursga yozilishingiz mumkin.",
-                                            reply_markup=course_buttons(courses))
+                db.insert_user(name=name,
+                               phone=message,
+                               city=city,
+                               username=user.username,
+                               userid=user.id)
 
-            context.user_data["state"] = STATE["course"]
+                courses = db.get_all_courses()
 
+                await update.message.reply_text(f"Tabriklaymiz, {context.user_data['name']}!\n\n"
+                                                "🎉 Siz muvaffaqiyatli ro'yxatdan o'tdingiz.\n\n"
+                                                f"Sizning shahringiz: {context.user_data['city']}\n"
+                                                f"Sizning telefon raqamingiz: {message}\n\n"
+                                                "Endi siz kursga yozilishingiz mumkin.",
+                                                reply_markup=course_buttons(courses))
 
-        if state == STATE["course"]:
+                context.user_data["state"] = STATE["course"]
+
+            else:
+                await update.message.reply_text("⚠️Raqam noto'g'ri formatda kiritildi!\n\n"
+                                                "Siz bilan bog'lana olishimiz uchun telefon raqamingizni (901234567) ko'rinishida qoldiring toki tugmani bosing👇", reply_markup=contact_button())
+
+                context.user_data["state"] = STATE["phone"]
+
+        if state == STATE["course"] or state == STATE["payment"]:
 
             course = db.get_course_by_title(message)
 
             context.user_data["course"] = course["id"]
 
-            await update.message.reply_photo(photo=open(course["photo"], "rb"),
+            await update.message.reply_photo(photo=open(f'media/{course["photo"]}', "rb"),
                                              caption=f"<b>{course['title']}</b>\n\n"
                                                      f"{course['description']}\n\n"
                                                      f"Narxi: {course['price']}\n\n"
@@ -78,44 +109,52 @@ async def message_handler(update, context):
                                              reply_markup=apply_course(course_id=course["id"]))
 
         if state == STATE["promocode"]:
+
             promocodes = db.get_promocodes_by_course_id(context.user_data["course"])
 
-            for promocode in promocodes:
-                print("promo>>",promocode)
-                if message == promocode["code"]:
-                    if is_promocode_expired(promocode):
-                        await update.message.reply_text("⚠️ Bu promokodni muddati o'tgan!")
-                    else:
-                        if int(promocode["limit_count"]) > 0:
+            print(promocodes)
 
-                            context.user_data["promocode"] = promocode["id"]
-
-                            print(context.user_data["course"])
-                            course = db.get_course_by_id(context.user_data["course"])
-
-                            print(course)
-
-                            db.update_promocode(limit_count=int(promocode["limit_count"])-1, promocode_id=promocode["id"])
-
-                            price = int(int(course["price"]) - (int(course["price"]) * promocode["discount_percentage"]) / 100)
-
-                            context.user_data["payment"] = price
-
-                            await update.message.reply_photo(photo=open(course["photo"], "rb"),
-                                                             caption=f"<b>{course['title']}</b>\n\n"
-                                                                     f"{course['description']}\n\n"
-                                                                     f"✅ Promo-kod muvaffaqiyatli qo'llanildi!\n"
-                                                                     f"Yangi narxi: <s>{course['price']}</s> ➡️ "
-                                                                     f"<i>{price}</i>\n\n"
-                                                                     f"Davomiyligi: {course['duration']} oy",
-                                                             parse_mode="HTML",
-                                                             reply_markup=payment(promo=False, course_id=course["id"]))
-
+            if len(promocodes) != 0:
+                print(12345)
+                for promocode in promocodes:
+                    print("promo>>",promocode)
+                    if message == promocode["code"]:
+                        if is_promocode_expired(promocode):
+                            await update.message.reply_text("⚠️ Bu promokodni muddati o'tgan!")
                         else:
-                            await update.message.reply_text("⚠️ Bu promokoddan foydalanish limiti tugagan!")
+                            if int(promocode["limit_count"]) > 0:
 
-                else:
-                    await update.message.reply_text("⚠️ Bunday promokod mavjud emas")
+                                context.user_data["promocode"] = promocode["id"]
+
+                                print(context.user_data["course"])
+                                course = db.get_course_by_id(context.user_data["course"])
+
+                                print(course)
+
+                                db.update_promocode(limit_count=int(promocode["limit_count"])-1, promocode_id=promocode["id"])
+
+                                price = int(int(course["price"]) - (int(course["price"]) * promocode["discount_percentage"]) / 100)
+
+                                context.user_data["payment"] = price
+
+                                await update.message.reply_photo(photo=open(f'media/{course["photo"]}', "rb"),
+                                                                 caption=f"<b>{course['title']}</b>\n\n"
+                                                                         f"{course['description']}\n\n"
+                                                                         f"✅ Promo-kod muvaffaqiyatli qo'llanildi!\n"
+                                                                         f"Yangi narxi: <s>{course['price']}</s> ➡️ "
+                                                                         f"<i>{price}</i>\n\n"
+                                                                         f"Davomiyligi: {course['duration']} oy",
+                                                                 parse_mode="HTML",
+                                                                 reply_markup=payment(promo=False, course_id=course["id"]))
+
+                            else:
+                                await update.message.reply_text("⚠️ Bu promokoddan foydalanish limiti tugagan!", reply_markup=skip_button())
+
+                    else:
+                        await update.message.reply_text("⚠️ Bunday promokod mavjud emas", reply_markup=skip_button())
+            else:
+                await update.message.reply_text("⚠️ Bunday promokod mavjud emas", reply_markup=skip_button())
+
 
     except Exception as e:
         print(e)
@@ -148,8 +187,6 @@ async def query_handler(update, context):
 
     data = query.data
 
-    sp = data.split("_")
-
     print(data)
 
     if data in regions:
@@ -157,7 +194,7 @@ async def query_handler(update, context):
 
         await query.message.delete()
 
-        await query.message.reply_text("Siz bilan bog'lana olishimiz uchun telefon raqamingizni (901234567) ko'rinishida qoldiring.", reply_markup=contact_button())
+        await query.message.reply_text("Siz bilan bog'lana olishimiz uchun telefon raqamingizni (901234567) ko'rinishida qoldiring toki tugmani bosing👇", reply_markup=contact_button())
 
         context.user_data["state"] = STATE["phone"]
 
@@ -174,6 +211,7 @@ async def query_handler(update, context):
         context.user_data["state"] = STATE["promocode"]
 
     if data.startswith("payment"):
+        sp = data.split("_")
 
         course = db.get_course_by_id(int(sp[1]))
 
@@ -185,25 +223,55 @@ async def query_handler(update, context):
         await query.message.edit_caption(caption=f"<b>{course['title']}</b>\n\n"
                                                  f"Narxi: {course['price']}\n\n"
                                                  f"Davomiyligi: {course['duration']} oy\n\n"
-                                                 f"To'lov uchun link: @admin\n\n"
+                                                 f"To'lov uchun link: [link]\n\n"
                                                  f"<i>To'lov qilib, chekini ushbu botga yuboring</i>",
                                          parse_mode="HTML")
 
         context.user_data["state"] = STATE["payment"]
 
-    # if sp[0] == "approve":
-    #
-    #     user = db.get_user_by_id(int(sp[1]))
-    #
-    #     await context.bot.send_message(chat_id=requester_id,
-    #                                    text="<b>Biznes klubga qo'shilganingiz bilan tabriklayman✅</b>\n\n<i>Fikr, taklif va shikoyatlaringizni adminga yozib qoldirishingiz mumkin.\n\nAdmin: @zokirov_manager</i>",
-    #                                    reply_markup=InlineKeyboardMarkup([
-    #                                        [
-    #                                            InlineKeyboardButton("Kanalga o'tish🚀",
-    #                                                                 url="https://t.me/+N1o_xsC-sqQ5YWJi")
-    #                                        ]
-    #                                    ]),
-    #                                    parse_mode="HTML")
+    if data.startswith("approve"):
+        sp = data.split(".")
+
+        course_id = sp[-1]
+        user_id = sp[1]
+
+        channel = db.get_channel_by_course_id(course_id)
+
+        await query.answer(text="Tasdiqlandi✅")
+        await query.message.edit_caption(caption=f"{query.message.caption} ✅")
+        # await query.message.edit_reply_markup(InlineKeyboardMarkup([[]]))
+        await context.bot.send_message(chat_id=user_id,
+                                       text="🎓 Kursingiz boshlanadi!\n"
+                                            "Darslarni boshlashdan oldin ro'yxatdan o'tganingizga ishonch hosil qiling.\n\n"
+                                            "Kanalga qo'shiling👇",
+                                       reply_markup=channel_button(channel["url"]),
+                                       parse_mode="HTML")
+
+        context.user_data["state"] = STATE["course"]
+
+    if data.startswith("reject"):
+        sp = data.split(".")
+
+        user_id = sp[1]
+
+        await query.answer(text="Rad etildi 🚫")
+        await query.message.edit_caption(caption=f"{query.message.caption} 🚫")
+        await context.bot.send_message(chat_id=user_id,
+                                       text=f"To'lov bo'yicha xatolik bor. Admin bilan bog'laning.",
+                                       reply_markup=admin_button(url=f"tg://user?id={query.from_user.id}"),
+                                       parse_mode="HTML")
+
+    if data == "skip":
+        course = db.get_course_by_id(context.user_data["course"])
+
+        await query.message.reply_photo(photo=open(f'media/{course["photo"]}', "rb"),
+                                         caption=f"<b>{course['title']}</b>\n\n"
+                                                 f"{course['description']}\n\n"
+                                                 f"Narxi: {course['price']}\n\n"
+                                                 f"Davomiyligi: {course['duration']} oy",
+                                         parse_mode="HTML",
+                                         reply_markup=payment(promo=False, course_id=course["id"]))
+
 
 async def contact_handler(update, context):
 
@@ -245,17 +313,20 @@ async def photo_handler(update, context):
 
             user = update.message.from_user
 
-            cheques_dir = 'photos/cheques'
-            if not os.path.exists(cheques_dir):
-                os.makedirs(cheques_dir)
+            cheques_dir = os.path.join(settings.MEDIA_ROOT, 'photos', 'cheques')
+            os.makedirs(cheques_dir, exist_ok=True)
 
             current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-            file_path = os.path.join(cheques_dir, f"{user.id}_{current_time}_{photo.file_unique_id}.jpg")
+
+            file_name = f"{user.id}_{current_time}_{photo.file_unique_id}.jpg"
+            file_path = os.path.join(cheques_dir, file_name)
 
             await photo.download_to_drive(file_path)
 
+            print(file_path.split("media/")[-1])
+
             await update.message.reply_text(
-                text="Tez orada to'lovingiz tasdiqlanadi va kurs talabasi bo'lasiz.\n\nAdmin: @admin"
+                text="Tez orada to'lovingiz tasdiqlanadi va kurs talabasi bo'lasiz."
             )
 
             print(context.user_data["course"])
@@ -269,9 +340,10 @@ async def photo_handler(update, context):
             if "promocode" in context.user_data:
                 promocode = context.user_data["promocode"]
 
+            print(user)
 
             db.insert_payment(user=user.id,
-                              photo=file_path,
+                              photo=file_path.split("media/")[-1],
                               course=course['id'],
                               payment=price,
                               promocode=promocode)
@@ -285,12 +357,14 @@ async def photo_handler(update, context):
                         caption=f"<a href='tg://user?id={update.message.from_user.id}'>{update.message.from_user.username}</a>",
                         parse_mode="HTML",
                         reply_markup=check_button(user_id=update.message.from_user.id,
-                                                  photo_id=photo.file_unique_id)
+                                                  photo_id=photo.file_unique_id,
+                                                  course_id=course["id"])
                     )
 
             except Exception as e:
                 print(e)
 
+        context.user_data["state"] = STATE["course"]
 
 class Command(BaseCommand):
     def handle(self, *args, **options):
