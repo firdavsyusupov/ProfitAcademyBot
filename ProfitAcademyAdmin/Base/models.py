@@ -1,3 +1,5 @@
+from urllib.parse import uses_query
+
 from django.db import models
 from django.db.models import ForeignKey
 
@@ -86,12 +88,3 @@ class Channel(models.Model):
         verbose_name = 'channel'
         verbose_name_plural = 'channels'
 
-class Admin(models.Model):
-    name = models.CharField(max_length=100)
-    username = models.CharField(max_length=100)
-
-    class Meta:
-        db_table = 'admins'
-        managed = False
-        verbose_name = 'admin'
-        verbose_name_plural = 'admins'
