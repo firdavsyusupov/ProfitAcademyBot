@@ -135,7 +135,7 @@ async def message_handler(update, context):
 
                                 price = int(int(course["price"]) - (int(course["price"]) * promocode["discount_percentage"]) / 100)
 
-                                context.user_data["payment"] = price
+                                context.user_data["discount"] = price
 
                                 await update.message.reply_photo(photo=open(f'media/{course["photo"]}', "rb"),
                                                                  caption=f"<b>{course['title']}</b>\n\n"
@@ -217,11 +217,16 @@ async def query_handler(update, context):
 
         context.user_data["course"] = course["id"]
 
-        context.user_data["payment"] = course['price']
+        price = course["price"]
+        context.user_data["payment"] = price
+
+        if "discount" in context.user_data:
+            price = context.user_data["discount"]
+            context.user_data["payment"] = price
 
         await query.message.edit_reply_markup(InlineKeyboardMarkup([[]]))
         await query.message.edit_caption(caption=f"<b>{course['title']}</b>\n\n"
-                                                 f"Narxi: {course['price']}\n\n"
+                                                 f"Narxi: {price}\n\n"
                                                  f"Davomiyligi: {course['duration']} oy\n\n"
                                                  f"To'lov uchun link: [link]\n\n"
                                                  f"<i>To'lov qilib, chekini ushbu botga yuboring</i>",
@@ -262,6 +267,7 @@ async def query_handler(update, context):
                                        parse_mode="HTML")
 
     if data == "skip":
+
         course = db.get_course_by_id(context.user_data["course"])
 
         await query.message.reply_photo(photo=open(f'media/{course["photo"]}', "rb"),
@@ -326,7 +332,8 @@ async def photo_handler(update, context):
             print(file_path.split("media/")[-1])
 
             await update.message.reply_text(
-                text="Tez orada to'lovingiz tasdiqlanadi va kurs talabasi bo'lasiz."
+                text="Tez orada to'lovingiz tasdiqlanadi va kurs talabasi bo'lasiz.",
+                reply_markup=course_buttons(db.get_all_courses())
             )
 
             print(context.user_data["course"])
@@ -340,9 +347,9 @@ async def photo_handler(update, context):
             if "promocode" in context.user_data:
                 promocode = context.user_data["promocode"]
 
-            print(user)
+            userid = db.get_user_by_id(userid=user.id)['id']
 
-            db.insert_payment(user=user.id,
+            db.insert_payment(user=userid,
                               photo=file_path.split("media/")[-1],
                               course=course['id'],
                               payment=price,
