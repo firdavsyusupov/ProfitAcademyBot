@@ -90,3 +90,11 @@ def admin_button(url):
             InlineKeyboardButton("Admin bilan bog'lanish", url=url)
         ]
     ])
+
+
+def user_button(url):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Profilga o'tish", url=url)
+        ]
+    ])

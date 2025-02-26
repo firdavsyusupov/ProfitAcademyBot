@@ -10,7 +10,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from .configs import STATE, regions
 from .database import Database
 from .keyboards import regions_button, course_buttons, contact_button, apply_course, payment, check_button, \
-    channel_button, skip_button, admin_button
+    channel_button, skip_button, admin_button, user_button
 from datetime import datetime
 
 load_dotenv()
@@ -23,6 +23,9 @@ db = Database("db.sqlite3")
 async def start(update, context):
 
     userid = update.message.from_user.id
+
+    context.user_data["discount"] = ""
+    context.user_data["promocode"] = ""
 
     user = db.get_user_by_id(userid)
     print(user)
@@ -45,6 +48,10 @@ async def start(update, context):
 async def message_handler(update, context):
 
     message = update.message.text
+
+    for course in db.get_all_courses():
+        if message == course["title"]:
+            context.user_data["state"] = STATE["course"]
 
     try:
         state = context.user_data["state"]
@@ -95,6 +102,9 @@ async def message_handler(update, context):
                 context.user_data["state"] = STATE["phone"]
 
         if state == STATE["course"] or state == STATE["payment"]:
+
+            context.user_data["discount"] = ""
+            context.user_data["promocode"] = ""
 
             course = db.get_course_by_title(message)
 
@@ -166,7 +176,6 @@ def is_promocode_expired(promocode):
         print("promokod>>", promocode)
         expiry_date_str = promocode["end"]
 
-        # Update the format to handle date and time
         expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d %H:%M:%S")
 
         today = datetime.today()
@@ -221,8 +230,12 @@ async def query_handler(update, context):
         context.user_data["payment"] = price
 
         if "discount" in context.user_data:
-            price = context.user_data["discount"]
-            context.user_data["payment"] = price
+            if len(str(context.user_data["discount"])) != 0:
+                price = context.user_data["discount"]
+                context.user_data["payment"] = price
+            else:
+                price = course["price"]
+                context.user_data["payment"] = price
 
         await query.message.edit_reply_markup(InlineKeyboardMarkup([[]]))
         await query.message.edit_caption(caption=f"<b>{course['title']}</b>\n\n"
@@ -242,8 +255,16 @@ async def query_handler(update, context):
 
         channel = db.get_channel_by_course_id(course_id)
 
+        print(query.message.caption)
+        print(query.message)
+        print(query)
+
         await query.answer(text="Tasdiqlandi✅")
-        await query.message.edit_caption(caption=f"{query.message.caption} ✅")
+        await query.message.edit_caption(
+            caption=f"{query.message.caption}\n\nTasdiqlandi✅",
+            reply_markup=user_button(url=f"tg://user?id={user_id}"),
+            parse_mode="HTML"
+        )
         # await query.message.edit_reply_markup(InlineKeyboardMarkup([[]]))
         await context.bot.send_message(chat_id=user_id,
                                        text="🎓 Kursingiz boshlanadi!\n"
@@ -260,7 +281,10 @@ async def query_handler(update, context):
         user_id = sp[1]
 
         await query.answer(text="Rad etildi 🚫")
-        await query.message.edit_caption(caption=f"{query.message.caption} 🚫")
+        await query.message.edit_caption(caption=f"{query.message.caption}\n\nRad etildi🚫",
+                                         reply_markup=user_button(url=f"tg://user?id={user_id}"),
+                                         parse_mode="HTML")
+
         await context.bot.send_message(chat_id=user_id,
                                        text=f"To'lov bo'yicha xatolik bor. Admin bilan bog'laning.",
                                        reply_markup=admin_button(url=f"tg://user?id={query.from_user.id}"),
@@ -342,10 +366,15 @@ async def photo_handler(update, context):
             print(context.user_data)
 
             price = context.user_data["payment"]
-            promocode = None
+            promocode_id = None
+            promocode = "-"
+            discount_text = ""
 
             if "promocode" in context.user_data:
-                promocode = context.user_data["promocode"]
+                if len(str(context.user_data['promocode'])) != 0:
+                    promocode_id = context.user_data["promocode"]
+                    promocode = db.get_promocode_by_id(promocode_id)["code"]
+                    discount_text = f"<s>{course['price']}</s>"
 
             userid = db.get_user_by_id(userid=user.id)['id']
 
@@ -353,7 +382,8 @@ async def photo_handler(update, context):
                               photo=file_path.split("media/")[-1],
                               course=course['id'],
                               payment=price,
-                              promocode=promocode)
+                              promocode=promocode_id)
+
 
             try:
                 groups = db.get_groups()
@@ -361,7 +391,10 @@ async def photo_handler(update, context):
                     await context.bot.send_photo(
                         chat_id=group["chat_id"],
                         photo=photo.file_id,
-                        caption=f"<a href='tg://user?id={update.message.from_user.id}'>{update.message.from_user.username}</a>",
+                        caption=f"<a href='tg://user?id={update.message.from_user.id}'>{update.message.from_user.first_name}</a>\n\n"
+                                f"Kurs: {course['title']}\n"
+                                f"To'lov: {price} {discount_text}\n"
+                                f"Promokod: {promocode}",
                         parse_mode="HTML",
                         reply_markup=check_button(user_id=update.message.from_user.id,
                                                   photo_id=photo.file_unique_id,
