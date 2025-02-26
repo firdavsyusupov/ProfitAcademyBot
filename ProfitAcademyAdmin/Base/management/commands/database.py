@@ -141,7 +141,7 @@ class Database:
 
     def get_promocode_by_id(self, promocode_id):
         self.cursor.execute('SELECT * FROM promocodes WHERE id = ?', (promocode_id, ))
-        return dict_fetchall(self.cursor)
+        return dict_fetchone(self.cursor)
 
 
     def insert_user(self, name, phone, city, username, userid):
