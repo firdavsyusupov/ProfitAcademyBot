@@ -228,7 +228,7 @@ async def query_handler(update, context):
         await query.message.edit_caption(caption=f"<b>{course['title']}</b>\n\n"
                                                  f"Narxi: {price}\n\n"
                                                  f"Davomiyligi: {course['duration']} oy\n\n"
-                                                 f"To'lov uchun link: [link]\n\n"
+                                                 f"To'lov uchun link: https://my.click.uz/clickp2p/3896C8A296B1F1369CDBEBF2250B181D4A6E5EA7C0695E1066C4D4119CB7FDC8\n\n"
                                                  f"<i>To'lov qilib, chekini ushbu botga yuboring</i>",
                                          parse_mode="HTML")
 
