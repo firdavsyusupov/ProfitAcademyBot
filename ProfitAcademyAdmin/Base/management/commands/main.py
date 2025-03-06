@@ -1,21 +1,23 @@
 import os
 import re
 
-from django.conf import settings
+# from django.conf import settings
 from django.core.management import BaseCommand
 from dotenv import load_dotenv
-from telegram import ReplyKeyboardRemove, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
+from telegram import ReplyKeyboardRemove, InlineKeyboardMarkup, LabeledPrice
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, CallbackContext, \
+    PreCheckoutQueryHandler
 
 from .configs import STATE, regions
 from .database import Database
-from .keyboards import regions_button, course_buttons, contact_button, apply_course, payment, check_button, \
+from .keyboards import regions_button, course_buttons, contact_button, apply_course, payment, \
     channel_button, skip_button, admin_button, user_button
 from datetime import datetime
 
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
+PAYME_PROVIDER_TOKEN = os.getenv("PAYME_PROVIDER_TOKEN")
 
 db = Database("db.sqlite3")
 
@@ -147,15 +149,40 @@ async def message_handler(update, context):
 
                                 context.user_data["discount"] = price
 
-                                await update.message.reply_photo(photo=open(f'media/{course["photo"]}', "rb"),
-                                                                 caption=f"<b>{course['title']}</b>\n\n"
-                                                                         f"{course['description']}\n\n"
-                                                                         f"✅ Promo-kod muvaffaqiyatli qo'llanildi!\n"
-                                                                         f"Yangi narxi: <s>{course['price']}</s> ➡️ "
-                                                                         f"<i>{price}</i>\n\n"
-                                                                         f"Davomiyligi: {course['duration']} oy",
-                                                                 parse_mode="HTML",
-                                                                 reply_markup=payment(promo=False, course_id=course["id"]))
+                                # await update.message.reply_photo(photo=open(f'media/{course["photo"]}', "rb"),
+                                #                                  caption=f"<b>{course['title']}</b>\n\n"
+                                #                                          f"{course['description']}\n\n"
+                                #                                          f"✅ Promo-kod muvaffaqiyatli qo'llanildi!\n"
+                                #                                          f"Yangi narxi: <s>{course['price']}</s> ➡️ "
+                                #                                          f"<i>{price}</i>\n\n"
+                                #                                          f"Davomiyligi: {course['duration']} oy",
+                                #                                  parse_mode="HTML",
+                                #                                  reply_markup=payment(promo=False, course_id=course["id"]))
+
+                                chat_id = update.message.chat_id
+                                title = course['title']
+                                description = f"""<b>{course['title']}</b>\n\n
+{course['description']}\n\n
+✅ Promo-kod muvaffaqiyatli qo'llanildi!\n
+Yangi narxi: {price}\n\n
+Davomiyligi: {course['duration']} oy"""
+
+                                payload = f"{course['id']}-{chat_id}"
+                                currency = "UZS"
+                                prices = [LabeledPrice(f"{course['title']}", int(price)*100)]  # 50,000 UZS (в тийинах)
+
+                                await context.bot.send_invoice(
+                                    chat_id=chat_id,
+                                    title=title,
+                                    description=description,
+                                    payload=payload,
+                                    provider_token=PAYME_PROVIDER_TOKEN,
+                                    currency=currency,
+                                    prices=prices,
+                                    # need_email=True,  # Можно запрашивать email, телефон и т. д.
+                                    # need_phone_number=True,
+                                    is_flexible=False,
+                                )
 
                             else:
                                 await update.message.reply_text("⚠️ Bu promokoddan foydalanish limiti tugagan!", reply_markup=skip_button())
@@ -226,6 +253,8 @@ async def query_handler(update, context):
 
         context.user_data["course"] = course["id"]
 
+        await query.message.edit_reply_markup(InlineKeyboardMarkup([[]]))
+
         price = course["price"]
         context.user_data["payment"] = price
 
@@ -237,14 +266,38 @@ async def query_handler(update, context):
                 price = course["price"]
                 context.user_data["payment"] = price
 
-        await query.message.edit_reply_markup(InlineKeyboardMarkup([[]]))
-        await query.message.edit_caption(caption=f"<b>{course['title']}</b>\n\n"
-                                                 f"Narxi: {price}\n\n"
-                                                 f"Davomiyligi: {course['duration']} oy\n\n"
-                                                 f"To'lov uchun link: [link]\n\n"
-                                                 f"<i>To'lov qilib, chekini ushbu botga yuboring</i>",
-                                         parse_mode="HTML")
 
+        chat_id = update.effective_user.id
+        print(123, chat_id)
+        title = course['title']
+        description = f"{course['title']}\n\n{course['description']}\n\n✅ Promo-kod muvaffaqiyatli qo'llanildi!\nYangi narxi: {course['price']}\n\nDavomiyligi: {course['duration']} oy"
+
+
+        payload = f"{course['id']}-{chat_id}"
+        currency = "UZS"
+        prices = [LabeledPrice(f"{course['title']}", int(price) * 100)]  # 50,000 UZS (в тийинах)
+
+
+        await context.bot.send_invoice(
+            chat_id=chat_id,
+            title=title,
+            description=description,
+            payload=payload,
+            provider_token=PAYME_PROVIDER_TOKEN,
+            currency=currency,
+            prices=prices,
+            # need_email=True,  # Можно запрашивать email, телефон и т. д.
+            # need_phone_number=True,
+            is_flexible=False,
+        )
+
+    #     await query.message.edit_caption(caption=f"<b>{course['title']}</b>\n\n"
+    #                                              f"Narxi: {price}\n\n"
+    #                                              f"Davomiyligi: {course['duration']} oy\n\n"
+    #                                              f"To'lov uchun link: [link]\n\n"
+    #                                              f"<i>To'lov qilib, chekini ushbu botga yuboring</i>",
+    #                                      parse_mode="HTML")
+    #
         context.user_data["state"] = STATE["payment"]
 
     if data.startswith("approve"):
@@ -333,87 +386,161 @@ async def contact_handler(update, context):
 
         context.user_data["state"] = STATE["course"]
 
-async def photo_handler(update, context):
+# async def photo_handler(update, context):
+#
+#     if update.message.photo:
+#         state = context.user_data["state"]
+#         if state == STATE["payment"]:
+#             photo_file = update.message.photo[-1].file_id
+#             photo = await context.bot.get_file(photo_file)
+#
+#             user = update.message.from_user
+#
+#             cheques_dir = os.path.join(settings.MEDIA_ROOT, 'photos', 'cheques')
+#             os.makedirs(cheques_dir, exist_ok=True)
+#
+#             current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+#
+#             file_name = f"{user.id}_{current_time}_{photo.file_unique_id}.jpg"
+#             file_path = os.path.join(cheques_dir, file_name)
+#
+#             await photo.download_to_drive(file_path)
+#
+#             print(file_path.split("media/")[-1])
+#
+#             await update.message.reply_text(
+#                 text="Tez orada to'lovingiz tasdiqlanadi va kurs talabasi bo'lasiz.",
+#                 reply_markup=course_buttons(db.get_all_courses())
+#             )
+#
+#             print(context.user_data["course"])
+#             course = db.get_course_by_id(int(context.user_data["course"]))
+#
+#             print(context.user_data)
+#
+#             price = context.user_data["payment"]
+#             promocode_id = None
+#             promocode = "-"
+#             discount_text = ""
+#
+#             if "promocode" in context.user_data:
+#                 if len(str(context.user_data['promocode'])) != 0:
+#                     promocode_id = context.user_data["promocode"]
+#                     promocode = db.get_promocode_by_id(promocode_id)["code"]
+#                     discount_text = f"<s>{course['price']}</s>"
+#
+#             userid = db.get_user_by_id(userid=user.id)['id']
+#
+#             db.insert_payment(user=userid,
+#                               photo=file_path.split("media/")[-1],
+#                               course=course['id'],
+#                               payment=price,
+#                               promocode=promocode_id)
+#
+#
+#             try:
+#                 groups = db.get_groups()
+#                 for group in groups:
+#                     await context.bot.send_photo(
+#                         chat_id=group["chat_id"],
+#                         photo=photo.file_id,
+#                         caption=f"<a href='tg://user?id={update.message.from_user.id}'>{update.message.from_user.first_name}</a>\n\n"
+#                                 f"Kurs: {course['title']}\n"
+#                                 f"To'lov: {price} {discount_text}\n"
+#                                 f"Promokod: {promocode}",
+#                         parse_mode="HTML",
+#                         reply_markup=check_button(user_id=update.message.from_user.id,
+#                                                   photo_id=photo.file_unique_id,
+#                                                   course_id=course["id"])
+#                     )
+#
+#             except Exception as e:
+#                 print(e)
+#
+#         context.user_data["state"] = STATE["course"]
 
-    if update.message.photo:
-        state = context.user_data["state"]
-        if state == STATE["payment"]:
-            photo_file = update.message.photo[-1].file_id
-            photo = await context.bot.get_file(photo_file)
 
-            user = update.message.from_user
+async def send_invoice(update, context: CallbackContext):
+    chat_id = update.message.chat_id
+    title = "Оплата заказа"
+    description = "Оплата товаров через Payme"
+    payload = "order-12345"  # ID заказа в твоей системе
+    currency = "UZS"
+    prices = [LabeledPrice("Товар", 10000)]  # 50,000 UZS (в тийинах)
 
-            cheques_dir = os.path.join(settings.MEDIA_ROOT, 'photos', 'cheques')
-            os.makedirs(cheques_dir, exist_ok=True)
-
-            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-            file_name = f"{user.id}_{current_time}_{photo.file_unique_id}.jpg"
-            file_path = os.path.join(cheques_dir, file_name)
-
-            await photo.download_to_drive(file_path)
-
-            print(file_path.split("media/")[-1])
-
-            await update.message.reply_text(
-                text="Tez orada to'lovingiz tasdiqlanadi va kurs talabasi bo'lasiz.",
-                reply_markup=course_buttons(db.get_all_courses())
-            )
-
-            print(context.user_data["course"])
-            course = db.get_course_by_id(int(context.user_data["course"]))
-
-            print(context.user_data)
-
-            price = context.user_data["payment"]
-            promocode_id = None
-            promocode = "-"
-            discount_text = ""
-
-            if "promocode" in context.user_data:
-                if len(str(context.user_data['promocode'])) != 0:
-                    promocode_id = context.user_data["promocode"]
-                    promocode = db.get_promocode_by_id(promocode_id)["code"]
-                    discount_text = f"<s>{course['price']}</s>"
-
-            userid = db.get_user_by_id(userid=user.id)['id']
-
-            db.insert_payment(user=userid,
-                              photo=file_path.split("media/")[-1],
-                              course=course['id'],
-                              payment=price,
-                              promocode=promocode_id)
+    await context.bot.send_invoice(
+        chat_id=chat_id,
+        title=title,
+        description=description,
+        payload=payload,
+        provider_token=PAYME_PROVIDER_TOKEN,
+        currency=currency,
+        prices=prices,
+        # need_email=True,  # Можно запрашивать email, телефон и т. д.
+        # need_phone_number=True,
+        is_flexible=False
+    )
 
 
-            try:
-                groups = db.get_groups()
-                for group in groups:
-                    await context.bot.send_photo(
-                        chat_id=group["chat_id"],
-                        photo=photo.file_id,
-                        caption=f"<a href='tg://user?id={update.message.from_user.id}'>{update.message.from_user.first_name}</a>\n\n"
-                                f"Kurs: {course['title']}\n"
-                                f"To'lov: {price} {discount_text}\n"
-                                f"Promokod: {promocode}",
-                        parse_mode="HTML",
-                        reply_markup=check_button(user_id=update.message.from_user.id,
-                                                  photo_id=photo.file_unique_id,
-                                                  course_id=course["id"])
-                    )
+async def precheckout_callback(update, context):
+    query = update.pre_checkout_query
+    await query.answer(ok=True)
 
-            except Exception as e:
-                print(e)
 
-        context.user_data["state"] = STATE["course"]
+async def successful_payment_callback(update, context):
+    _payment = update.message.successful_payment
+    user = update.message.from_user
+    amount = _payment.total_amount / 100
+
+    await update.message.reply_text(f"To'lov muvaffaqiyatli amalga oshirildi✅\n\nSumma: {amount}")
+
+    print(context.user_data["course"])
+
+    course = db.get_course_by_id(int(context.user_data["course"]))
+
+    print(context.user_data)
+
+    price = context.user_data["payment"]
+    promocode_id = None
+    promocode = "-"
+    discount_text = ""
+
+    if "promocode" in context.user_data:
+        if len(str(context.user_data['promocode'])) != 0:
+            promocode_id = context.user_data["promocode"]
+            promocode = db.get_promocode_by_id(promocode_id)["code"]
+            discount_text = f"<s>{course['price']}</s>"
+
+    userid = db.get_user_by_id(userid=user.id)['id']
+
+    db.insert_payment(user=userid,
+                      course=course['id'],
+                      payment=price,
+                      promocode=promocode_id)
+
+    groups = db.get_groups()
+    for group in groups:
+        await context.bot.send_message(
+                                chat_id=group["chat_id"],
+                                text=f"<a href='tg://user?id={user.id}'>{user.first_name}</a>\n\n"
+                                        f"Kurs: {course['title']}\n"
+                                        f"To'lov: {price} {discount_text}\n"
+                                        f"Promokod: {promocode}",
+                                parse_mode="HTML")
+
 
 class Command(BaseCommand):
     def handle(self, *args, **options):
         application = Application.builder().token(TOKEN).build()
 
         application.add_handler(CommandHandler('start', start))
-        application.add_handler(MessageHandler(filters.TEXT, message_handler))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
         application.add_handler(MessageHandler(filters.CONTACT, contact_handler))
-        application.add_handler(MessageHandler(filters.PHOTO, photo_handler))
+        # application.add_handler(MessageHandler(filters.PHOTO, photo_handler))
         application.add_handler(CallbackQueryHandler(query_handler))
+        application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
+        application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
+
+        application.add_handler(CommandHandler('pay', send_invoice))
 
         application.run_polling()

@@ -161,7 +161,7 @@ class Database:
         except sqlite3.IntegrityError as e:
             print(f"Error inserting user: {e}")
 
-    def insert_payment(self, user, photo, course, payment, promocode=None, comment=None):
+    def insert_payment(self, user, course, payment, photo=None, promocode=None, comment=None):
         current_time = get_current_time()
         try:
             self.cursor.execute('''

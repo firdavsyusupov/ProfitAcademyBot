@@ -1,5 +1,3 @@
-from urllib.parse import uses_query
-
 from django.db import models
 from django.db.models import ForeignKey
 
@@ -16,7 +14,6 @@ class User(models.Model):
 
     class Meta:
         db_table = 'users'
-        managed = False
         verbose_name = 'user'
         verbose_name_plural = 'users'
 
@@ -32,7 +29,6 @@ class Course(models.Model):
 
     class Meta:
         db_table = 'courses'
-        managed = False
         verbose_name = 'course'
         verbose_name_plural = 'courses'
 
@@ -49,7 +45,6 @@ class Promocode(models.Model):
 
     class Meta:
         db_table = 'promocodes'
-        managed = False
         verbose_name = 'promocode'
         verbose_name_plural = 'promocodes'
 
@@ -59,7 +54,6 @@ class Group(models.Model):
 
     class Meta:
         db_table = 'groups'
-        managed = False
         verbose_name = 'group'
         verbose_name_plural = 'groups'
 
@@ -74,7 +68,6 @@ class Payment(models.Model):
 
     class Meta:
         db_table = 'payments'
-        managed = False
         verbose_name = 'payment'
         verbose_name_plural = 'payments'
 
@@ -84,7 +77,5 @@ class Channel(models.Model):
 
     class Meta:
         db_table = 'channels'
-        managed = False
         verbose_name = 'channel'
         verbose_name_plural = 'channels'
-

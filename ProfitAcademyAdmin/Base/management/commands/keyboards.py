@@ -55,10 +55,10 @@ def course_buttons(courses):
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
 
-def check_button(user_id, photo_id, course_id):
+def check_button(user_id, course_id):
 
-    callback_data_approve = f"approve.{user_id}.{photo_id}.{course_id}"
-    callback_data_reject = f"reject.{user_id}.{photo_id}.{course_id}"
+    callback_data_approve = f"approve.{user_id}.{course_id}"
+    callback_data_reject = f"reject.{user_id}.{course_id}"
 
     keyboard = [[
         InlineKeyboardButton("✅", callback_data=callback_data_approve),
